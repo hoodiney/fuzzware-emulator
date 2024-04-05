@@ -17,7 +17,7 @@ from .user_hooks import (add_block_hook, add_func_hook,
 from .util import (bytes2int, load_config_deep, parse_address_value,
                    parse_symbols, resolve_region_file_paths, closest_symbol)
 
-logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger("emulator")
 
 def unicorn_trace_syms(uc, pc, size=0, user_data=None):
@@ -42,6 +42,7 @@ def configure_unicorn(args):
         native.load_native_lib(native_lib_path)
 
     limits = config.get("limits")
+    logger.info(f"----------------    limits: {limits}   ------------------")
     if limits:
         if 'translation_blocks' in limits:
             args.basic_block_limit = limits['translation_blocks']
@@ -58,7 +59,15 @@ def configure_unicorn(args):
         sys.exit(1)
 
     # Create the unicorn
-    uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+    # TODO: update here to support Cortex-A 
+    arch = config.get("arch", "cortex-m") 
+    if arch == "cortex-m":
+        uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+    elif arch == "armv4t":
+        uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
+    else:
+        logger.error("unsupported arch")
+        exit(1)
 
     uc.symbols, uc.syms_by_addr = parse_symbols(config)
 
@@ -167,8 +176,12 @@ def configure_unicorn(args):
         if entry_image_base is None:
             logger.error("Binary entry point missing! Make sure 'entry_point is in your configuration")
             sys.exit(1)
-        config['initial_sp'] = bytes2int(uc.mem_read(entry_image_base, 4))
-        config['entry_point'] = bytes2int(uc.mem_read(entry_image_base + 4, 4))
+        if arch == "cortex-m":
+            config['initial_sp'] = bytes2int(uc.mem_read(entry_image_base, 4))
+            config['entry_point'] = bytes2int(uc.mem_read(entry_image_base + 4, 4))
+        elif arch == "armv4t":
+            config['initial_sp'] = 0
+            config['entry_point'] = entry_image_base
 
         logger.debug(f"Recovered entry points: {config['entry_point']:08x}, initial_sp: {config['initial_sp']:08x}")
 
